@@ -1,0 +1,159 @@
+# -----------------------------------------------------------
+# SERVER1: MASTER-SERVER (Jenkins, Maven, Docker, Ansible, Trivy)
+# -----------------------------------------------------------
+
+resource "aws_security_group" "my_security_group1" {
+  name        = "my-security-group1"
+  description = "Allow SSH, HTTP, HTTPS, 8080, 8081 for Jenkins & Maven"
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Jenkins Web UI"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Maven / Custom Port"
+    from_port   = 8081
+    to_port     = 8081
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "my-security-group1"
+  }
+}
+
+resource "aws_instance" "my_ec2_instance1" {
+  ami                    = "ami-0cfde0ea8edd312d4" # Ubuntu 22.04 (Ohio)
+  instance_type          = "t2.medium"
+  vpc_security_group_ids = [aws_security_group.my_security_group1.id]
+  key_name               = "Ohio-key"
+
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp2"
+  }
+
+  tags = {
+    Name = "MASTER-SERVER"
+  }
+
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("./Ohio-key.pem")
+      host        = self.public_ip
+    }
+
+    inline = [
+      "sleep 120",
+      "sudo apt update -y && sudo apt upgrade -y",
+
+      # -----------------------
+      # Install Java & Git
+      # -----------------------
+      "sudo apt install -y openjdk-17-jdk git wget curl unzip apt-transport-https ca-certificates gnupg lsb-release",
+
+      # -----------------------
+      # Install Maven 3.9.9             # Install seperately in your cmd
+      # -----------------------
+      "cd /tmp",
+      "sudo wget https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz",
+      "sudo tar xzf apache-maven-3.9.9-bin.tar.gz -C /opt",
+      "sudo ln -sfn /opt/apache-maven-3.9.9 /opt/maven",
+      "echo 'export M2_HOME=/opt/maven' | sudo tee /etc/profile.d/maven.sh",
+      "echo 'export PATH=$M2_HOME/bin:$PATH' | sudo tee -a /etc/profile.d/maven.sh",
+      "sudo chmod +x /etc/profile.d/maven.sh",
+      "source /etc/profile.d/maven.sh",
+      "mvn -version",
+
+      # -----------------------
+      # Install Jenkins
+      # -----------------------
+      "curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null",
+      "echo 'deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/' | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null",
+      "sudo apt update -y",
+      "sudo apt install -y jenkins",
+      "sudo systemctl enable jenkins",
+      "sudo systemctl start jenkins",
+
+      # -----------------------
+      # Install Docker 
+      # -----------------------
+      "sudo install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+      "echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu jammy stable' | sudo tee /etc/apt/sources.list.d/docker.list",
+      "sudo apt update -y",
+      "sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      "sudo usermod -aG docker ubuntu",
+
+      # -----------------------
+      # Install Trivy
+      # -----------------------
+      "cd /tmp",
+      "sudo wget -O trivy.deb https://github.com/aquasecurity/trivy/releases/download/v0.55.2/trivy_0.55.2_Linux-64bit.deb",
+      "sudo dpkg -i trivy.deb",
+
+      # -----------------------
+      # Install Ansible
+      # -----------------------
+      "sudo apt install -y software-properties-common",
+      "sudo add-apt-repository --yes --update ppa:ansible/ansible",
+      "sudo apt update -y",
+      "sudo apt install -y ansible"
+    ]
+  }
+}
+
+# STEP 4: OUTPUTS
+output "ACCESS_YOUR_JENKINS_HERE" {
+  value = "http://${aws_instance.my_ec2_instance1.public_ip}:8080"
+}
+
+output "Jenkins_Initial_Password_Command" {
+  value = "ssh -i ./Ohio-key.pem ubuntu@${aws_instance.my_ec2_instance1.public_ip} 'sudo cat /var/lib/jenkins/secrets/initialAdminPassword'"
+}
+
+output "MASTER_SERVER_PUBLIC_IP" {
+  value = aws_instance.my_ec2_instance1.public_ip
+}
+
+output "MASTER_SERVER_PRIVATE_IP" {
+  value = aws_instance.my_ec2_instance1.private_ip
+}
