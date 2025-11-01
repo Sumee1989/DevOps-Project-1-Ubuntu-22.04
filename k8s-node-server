@@ -91,7 +91,7 @@ resource "aws_instance" "my_ec2_instance2" {
     connection {
       type        = "ssh"
       user        = "ubuntu"
-      private_key = file("./Ohio-key.pem")
+      private_key = file("./My_key.pem")
       host        = self.public_ip
     }
 
