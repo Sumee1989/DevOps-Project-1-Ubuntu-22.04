@@ -1,0 +1,66 @@
+-----------------------------------------------------------------
+# Follow This Manual Method (Alternative to ssh-copy-id) 
+-----------------------------------------------------------------
+
+# Generate an SSH key pair on the MASTER
+
+ssh-keygen -t rsa -b 4096
+
+# Now you’ll have two files:
+# private key           ~/.ssh/id_rsa             
+# public key            ~/.ssh/id_rsa.pub         
+
+cat ~/.ssh/id_rsa.pub
+
+# Copy the output inside your Node-Server
+
+mkdir -p ~/.ssh
+echo "<PASTE_MASTER_PUBLIC_KEY_HERE>" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+chmod 700 ~/.ssh
+
+# Now test from MASTER:
+# You should get in without using any password or key.
+
+ssh ubuntu@<NODE_PRIVATE_IP>
+
+
+---------------------------------------------------------------------------------------------------
+# Once inside in your Node Server, Install these in your Node Server ( Docker, kubectl, Minikube)
+# This is just to know how Ansible works 
+---------------------------------------------------------------------------------------------------
+
+#!/bin/bash
+set -e
+
+echo "Updating system..."
+sudo apt update -y && sudo apt upgrade -y
+
+echo "Installing dependencies..."
+sudo apt install -y curl wget apt-transport-https ca-certificates conntrack gnupg lsb-release
+
+echo "Installing Docker..."
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update -y && sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable docker
+sudo usermod -aG docker ubuntu
+
+echo "Installing kubectl..."
+sudo curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+kubectl version --client --short
+
+echo "Installing Minikube (latest)..."
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+echo "Starting Minikube with Docker driver..."
+sudo -u ubuntu minikube start --driver=docker --force
+
+echo "Minikube installation complete!"
+sudo -u ubuntu minikube status
