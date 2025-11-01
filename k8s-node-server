@@ -1,0 +1,151 @@
+# -----------------------------------------------------------
+# SERVER2: NODE-SERVER (Docker + Kubernetes)
+# -----------------------------------------------------------
+
+# STEP 1: SECURITY GROUP FOR DOCKER & K8S
+resource "aws_security_group" "my_security_group2" {
+  name        = "my-security-group2"
+  description = "Allow K8s required ports"
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "K8s API server"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "K8s Dashboard/API proxy"
+    from_port   = 8001
+    to_port     = 8001
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Custom/NodePort services"
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Kubelet API"
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# STEP 2: CREATE NODE-SERVER EC2 INSTANCE
+resource "aws_instance" "my_ec2_instance2" {
+  ami                    = "ami-0cfde0ea8edd312d4"   # Ubuntu 22.04 in us-east-2 (Ohio)
+  instance_type          = "t2.medium"               # 2 vCPU & 4GB RAM for K8s
+  vpc_security_group_ids = [aws_security_group.my_security_group2.id]
+  key_name               = "My_key"
+
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp2"
+  }
+
+  tags = {
+    Name = "NODE-SERVER"
+  }
+
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("./Ohio-key.pem")
+      host        = self.public_ip
+    }
+
+    inline = [
+      "sleep 200",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y apt-transport-https ca-certificates curl gpg",
+
+      # -------------------------------
+      # Install Docker
+      # -------------------------------
+      "sudo install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
+      "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable' | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      "sudo usermod -aG docker ubuntu",
+
+      # -------------------------------
+      # Install Kubernetes components
+      # -------------------------------
+      "sudo swapoff -a",
+      "sudo sed -i '/ swap / s/^/#/' /etc/fstab",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y apt-transport-https curl",
+      "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg",
+      "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list",
+      "sudo apt-get update -y",
+      "sudo apt-get install -y kubelet kubeadm kubectl",
+      "sudo apt-mark hold kubelet kubeadm kubectl",
+      "sudo systemctl enable --now kubelet",
+
+      # -------------------------------
+      # Initialize Kubernetes cluster
+      # -------------------------------
+      "sudo kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=NumCPU --ignore-preflight-errors=Mem",
+      "mkdir -p $HOME/.kube",
+      "sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config",
+      "sudo chown $(id -u):$(id -g) $HOME/.kube/config",
+
+      # -------------------------------
+      # Install Calico network plugin
+      # -------------------------------
+      "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.0/manifests/calico.yaml",
+      "kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true"
+    ]
+  }
+}
+
+# STEP 3: OUTPUTS
+output "NODE_SERVER_PUBLIC_IP" {
+  value = aws_instance.my_ec2_instance2.public_ip
+}
+
+output "NODE_SERVER_PRIVATE_IP" {
+  value = aws_instance.my_ec2_instance2.private_ip
+}
