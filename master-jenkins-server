@@ -91,17 +91,24 @@ resource "aws_instance" "my_ec2_instance1" {
       "sudo apt install -y openjdk-17-jdk git wget curl unzip apt-transport-https ca-certificates gnupg lsb-release",
 
       # -----------------------
-      # Install Maven 3.9.9             # Install seperately in your cmd
+      # Install Maven 3.9.9          # If not installed install seperately in cmd
       # -----------------------
-      "cd /tmp",
-      "sudo wget https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz",
-      "sudo tar xzf apache-maven-3.9.9-bin.tar.gz -C /opt",
+     
+      "cd /opt",
+      "sudo apt install -y wget tar",
+      "sudo wget https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz",
+      "sudo tar xzf apache-maven-3.9.9-bin.tar.gz",
       "sudo ln -sfn /opt/apache-maven-3.9.9 /opt/maven",
+
+      # Set up environment variables
       "echo 'export M2_HOME=/opt/maven' | sudo tee /etc/profile.d/maven.sh",
       "echo 'export PATH=$M2_HOME/bin:$PATH' | sudo tee -a /etc/profile.d/maven.sh",
       "sudo chmod +x /etc/profile.d/maven.sh",
       "source /etc/profile.d/maven.sh",
-      "mvn -version",
+
+      # Verify Maven
+      "/opt/maven/bin/mvn -v"
+
 
       # -----------------------
       # Install Jenkins
@@ -157,3 +164,4 @@ output "MASTER_SERVER_PUBLIC_IP" {
 output "MASTER_SERVER_PRIVATE_IP" {
   value = aws_instance.my_ec2_instance1.private_ip
 }
+
