@@ -130,6 +130,7 @@ resource "aws_instance" "my_ec2_instance1" {
       "sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
       "sudo usermod -aG docker ubuntu",
 
+
       # -----------------------
       # Install Trivy
       # -----------------------
@@ -144,6 +145,11 @@ resource "aws_instance" "my_ec2_instance1" {
       "sudo add-apt-repository --yes --update ppa:ansible/ansible",
       "sudo apt update -y",
       "sudo apt install -y ansible"
+
+      # Allow Jenkins to use Docker
+      "sudo usermod -aG docker jenkins",
+      "sudo systemctl restart docker",
+      "sudo systemctl restart jenkins"
     ]
   }
 }
